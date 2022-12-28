@@ -95,6 +95,7 @@ module.exports = function (homebridge) {
 class MagicOccupancy {
     constructor (log, config) {
         this.log = log;
+        this.debug = config.debug ?? false;
         this.name = config.name.trim() ?? 'MagicOccupancy';
         this.lightSwitchesNames = (config.lightSwitchesNames ?? '').split(',');
         this.statefulSwitchesNames = (config.statefulSwitchesNames ?? '').split(',');
@@ -158,7 +159,7 @@ class MagicOccupancy {
         this.occupancyService
             .getCharacteristic(Characteristic.TimeoutDelay)
             .on('change', event => {
-                this.log('Setting stay occupied delay to:', event.newValue)
+                    this.debug && this.log('Setting stay occupied delay to:', event.newValue)
                 this.stayOccupiedDelay = event.newValue
             });
 
@@ -177,14 +178,14 @@ class MagicOccupancy {
             .getCharacteristic(Characteristic.TimeRemaining)
             .on('change', event => {
                 if (event.newValue === 0 && event.oldValue > 0) {
-                    this.log('Cancel timer and set occupancy to "NotDetected"')
+                        this.debug && this.log('Cancel timer and set occupancy to "NotDetected"')
                     this.setOccupancyNotDetected()
                 }
             });
 
         /* Make the lightSwitches */
         if (this.lightSwitchesNames.length > 0) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 'Making ' +
                     this.lightSwitchesNames.length +
                     ' Light Switch switchServices'
@@ -205,7 +206,7 @@ class MagicOccupancy {
         }
         /* Make the statefulSwitches */
         if (this.statefulSwitchesNames.length > 0) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 'Making ' +
                     this.statefulSwitchesNames.length +
                     ' Stateful trigger switchServices'
@@ -226,7 +227,7 @@ class MagicOccupancy {
         }
         /* Make the triggerSwitches */
         if (this.triggerSwitchesNames.length > 0) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 'Making ' +
                     this.triggerSwitchesNames.length +
                     ' Trigger trigger switchServices'
@@ -248,7 +249,7 @@ class MagicOccupancy {
 
         /* Make the statefulStayOnSwitches */
         if (this.statefulStayOnSwitchesNames.length > 0) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 'Making ' +
                     this.statefulStayOnSwitchesNames.length +
                     ' StayOn Stateful trigger switchServices'
@@ -269,7 +270,7 @@ class MagicOccupancy {
         }
         /* Make the triggerStayOnSwitches */
         if (this.triggerStayOnSwitchesNames.length > 0) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 'Making ' +
                     this.triggerStayOnSwitchesNames.length +
                     ' StayOn Trigger trigger switchServices'
@@ -303,7 +304,7 @@ class MagicOccupancy {
 
         //Handle start on reboot
         if (this.startOnReboot) {
-            this.log(`startOnReboot==true - setting to active`)
+                this.debug && this.log(`startOnReboot==true - setting to active`)
             //Run the set after homebridge should have booted to ensure events fire
             setTimeout(
                 function () {
@@ -349,7 +350,7 @@ class MagicOccupancy {
 
             return state
         } catch (error) {
-            this.log.debug(`Error initializing past state, falling back on default - ${error}`);
+            this.debug && this.log.debug(`Error initializing past state, falling back on default - ${error}`);
             return defaultState;
         }
     }
@@ -376,8 +377,8 @@ class MagicOccupancy {
         this.stop();
 
         this._timer_started = new Date().getTime();
-        this.log('Timer startUnoccupiedDelayed:', timeRemaining);
-
+        this.debug && this.log('Timer startUnoccupiedDelayed:', timeRemaining);
+        
         this._timer = setTimeout(
             this.setOccupancyNotDetected.bind(this),
             Math.round(timeRemaining * 1000)
@@ -414,7 +415,7 @@ class MagicOccupancy {
      */
     stop () {
         if (this._timer) {
-            this.log('Delay timer stopped');
+            this.debug && this.log('Delay timer stopped');
             clearTimeout(this._timer);
             clearInterval(this._interval);
             this._timer = null;
@@ -427,10 +428,10 @@ class MagicOccupancy {
     //Helper to get a cached state value
     getCachedState (key, defaultValue) {
         if (!this.persistBetweenReboots) {
-            this.log.debug(`Persistence disabled - ignoring cached value for ${key}`);
+            this.debug && this.log.debug(`Persistence disabled - ignoring cached value for ${key}`);
             return defaultValue;
         }
-        this.log.debug(`Loading cached value for ${key}`);
+        this.debug && this.log.debug(`Loading cached value for ${key}`);
 
         const cachedValue = this.storage.getItemSync(this.name + '-HMO-' + key);
 
@@ -510,7 +511,7 @@ class MagicOccupancy {
 
         //Clear max timeout
         if (this._max_occupation_timer != null) {
-            this.log('Max occupation timer stopped');
+            this.debug && this.log('Max occupation timer stopped');
             clearTimeout(this._max_occupation_timer);
             this._max_occupation_timer = null;
         }
@@ -548,7 +549,7 @@ class MagicOccupancy {
      */
     checkOccupancy (timeoutUntilCheck = 0) {
         if (this.locksCounter > 0) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 `checking occupancy waiting for ${this.locksCounter} to clear; waiting for at least 100ms`
             );
             timeoutUntilCheck = Math.max(100, timeoutUntilCheck);
@@ -573,7 +574,7 @@ class MagicOccupancy {
         const switchesToCheck = this.switchServices;
         //Interpolate string to copy
         const previousModeState = `${this.modeState}`;
-        this.log.debug(`checking occupancy. Total: ${switchesToCheck.length} switches`);
+        this.debug && this.log.debug(`checking occupancy. Total: ${switchesToCheck.length} switches`);
 
         var result = {
             already_acted: false,
@@ -593,8 +594,7 @@ class MagicOccupancy {
                 if (this.modeState != 'Occupied') {
                     this.setOccupancyDetected();
                 }
-
-                this.log(
+                this.debug && this.log(
                     `checkOccupancy result: true. Previous state: ${previousModeState}, current state: ${this.modeState}`
                 );
             }
@@ -605,8 +605,7 @@ class MagicOccupancy {
                 if(previousModeState == 'Occupied') {
                     this.startUnoccupiedDelay();
                 }
-
-                this.log(
+                this.debug && this.log(
                     `checkOccupancy result: false. Previous state: ${previousModeState}, current state: ${this.modeState}`
                 );
             }
@@ -623,7 +622,7 @@ class MagicOccupancy {
                 .getValue(
                     function (err, value) {
                         if (err) {
-                            this.log(
+                            this.debug && this.log(
                                 `ERROR GETTING VALUE Characteristic.KeepingOccupancyTriggered ${err}`
                             )
                             value = false
@@ -641,7 +640,7 @@ class MagicOccupancy {
         ) {
             this.startUnoccupiedDelay();
 
-            this.log(
+            this.debug && this.log(
                 `checkOccupancy result: false (0 switches). Previous occupied state: ${previousModeState}, current state: ${this.modeState}`
             );
         }
@@ -722,7 +721,7 @@ class BaseHelperSwitch {
         try {
             callback();
         } catch (error) {
-            this.log.debug(`Callback error: BaseHelperSwitch._internalStateChangeTrigger - ${error}`);
+            this.debug && this.log.debug(`Callback error: BaseHelperSwitch._internalStateChangeTrigger - ${error}`);
         }
 
         //Determine if the state is different
@@ -738,7 +737,7 @@ class BaseHelperSwitch {
 
         //Make sure we're actually full initialized
         if (!this.occupancySensor.initializationCompleted) {
-            this.log.debug(
+            this.debug && this.log.debug(
                 'Setting ' + this.name + ' initial state and bypassing all events'
             )
             return
@@ -844,7 +843,7 @@ class LightSwitchMirrorSwitch extends BaseHelperSwitch {
                     try {
                         callback()
                     } catch (error) {
-                        this.log.debug(`Callback error: LightSwitchMirrorSwitch.constructor - ${error}`)
+                        this.debug && this.log.debug(`Callback error: LightSwitchMirrorSwitch.constructor - ${error}`)
                     }
 
                     const properSwitchState = this.occupancySensor.modeState != 'Unoccupied';
