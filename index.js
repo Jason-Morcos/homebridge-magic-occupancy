@@ -159,7 +159,7 @@ class MagicOccupancy {
         this.occupancyService
             .getCharacteristic(Characteristic.TimeoutDelay)
             .on('change', event => {
-                    this.debug && this.log('Setting stay occupied delay to:', event.newValue)
+                this.debug && this.log('Setting stay occupied delay to:', event.newValue)
                 this.stayOccupiedDelay = event.newValue
             });
 
@@ -178,7 +178,7 @@ class MagicOccupancy {
             .getCharacteristic(Characteristic.TimeRemaining)
             .on('change', event => {
                 if (event.newValue === 0 && event.oldValue > 0) {
-                        this.debug && this.log('Cancel timer and set occupancy to "NotDetected"')
+                    this.debug && this.log('Cancel timer and set occupancy to "NotDetected"')
                     this.setOccupancyNotDetected()
                 }
             });
@@ -304,7 +304,7 @@ class MagicOccupancy {
 
         //Handle start on reboot
         if (this.startOnReboot) {
-                this.debug && this.log(`startOnReboot==true - setting to active`)
+            this.debug && this.log(`startOnReboot==true - setting to active`)
             //Run the set after homebridge should have booted to ensure events fire
             setTimeout(
                 function () {
