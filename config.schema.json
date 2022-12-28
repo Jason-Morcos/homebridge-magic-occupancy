@@ -8,6 +8,12 @@
                 "title": "Name",
                 "type": "string"
             },
+            "debug": {
+                "title": "Enable Debug Logging",
+                "type": "boolean",
+                "default": false,
+                "required": true
+            },
             "serial": {
                 "required": false,
                 "description": "Serial for the occupancy sensor (changing this will break existing HomeKit automations), defaults to 'JmoMagicOccupancySwitch'.",
