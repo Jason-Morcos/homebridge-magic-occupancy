@@ -151,6 +151,10 @@ class MagicOccupancy {
             .setCharacteristic(Characteristic.Model, '2')
             .setCharacteristic(Characteristic.SerialNumber, this.serial);
 
+        //Fix names getting messed up by iOS 16
+        this.occupancyService.addOptionalCharacteristic(Characteristic.ConfiguredName);
+        this.occupancyService.setCharacteristic(Characteristic.ConfiguredName, this.name.trim());
+
         this.occupancyService.addCharacteristic(Characteristic.TimeoutDelay);
         this.occupancyService.setCharacteristic(
             Characteristic.TimeoutDelay,
@@ -691,6 +695,10 @@ class BaseHelperSwitch {
             .onGet(async () => {
                 return this._getIsKeepingOccupancyTriggered()
             });
+
+        //Fix names getting messed up by iOS 16
+        this._service.addOptionalCharacteristic(Characteristic.ConfiguredName);
+        this._service.setCharacteristic(Characteristic.ConfiguredName, this.name.trim());
 
         //Attach to changes
         this._service
