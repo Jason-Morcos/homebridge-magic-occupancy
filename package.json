@@ -1,6 +1,6 @@
 {
   "name": "homebridge-magic-occupancy",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "description": "Occupancy sensor linked to several trigger types to allow customizable situations: https://github.com/Jason-Morcos/homebridge-magic-occupancy",
   "main": "index.js",
   "license": "GPL-3.0",
@@ -18,7 +18,8 @@
     "url": "https://github.com/Jason-Morcos/homebridge-magic-occupancy.git"
   },
   "engines": {
-    "homebridge": ">=0.2.5"
+    "homebridge": "^1.6.0 || ^2.0.0-beta.0",
+    "node": "^18.20.4 || ^20.16.0 || ^22.5.1"
   },
   "dependencies": {
     "node-persist": "^2.1.0"

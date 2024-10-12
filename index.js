@@ -3,86 +3,21 @@
 var inherits = require('util').inherits;
 var Service, Characteristic, HomebridgeAPI;
 
+const TIME_REMAINING_CHARACTERISTIC_NAME = 'Time Remaining';
+const TIME_REMAINING_CHARACTERISTIC_UUID = '2000006D-0000-1000-8000-0026BB765291';
+
+const TIMEOUT_DELAY_CHARACTERISTIC_NAME = 'Post-Activity Timeout Delay';
+const TIMEOUT_DELAY_CHARACTERISTIC_UUID = '94a765c6-e114-11eb-ba80-0242ac130004';
+
+const KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME = 'Keeping Occupancy Triggered';
+const KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_UUID = '25eb64e4-e104-11eb-ba80-0242ac130004';
+
 // OccupancyTriggerSwitch is 100% based on https://github.com/nfarina/homebridge-dummy
 
 module.exports = function (homebridge) {
     Service = homebridge.hap.Service;
     Characteristic = homebridge.hap.Characteristic;
     HomebridgeAPI = homebridge;
-
-    /**
-     * Characteristic "Time Remaining"
-     */
-    Characteristic.TimeRemaining = function () {
-        Characteristic.call(
-            this,
-            'Time Remaining',
-            '2000006D-0000-1000-8000-0026BB765291'
-        );
-        this.setProps({
-            format: Characteristic.Formats.UINT64,
-            unit: Characteristic.Units.SECONDS,
-            maxValue: 2147483647,
-            minValue: 0,
-            minStep: 1,
-            perms: [
-                Characteristic.Perms.READ,
-                Characteristic.Perms.WRITE,
-                Characteristic.Perms.NOTIFY
-            ]
-        });
-        this.value = this.getDefaultValue();
-    }
-    inherits(Characteristic.TimeRemaining, Characteristic);
-    Characteristic.TimeRemaining.UUID = '2000006D-0000-1000-8000-0026BB765291';
-
-    /**
-     * Characteristic "Timeout Delay"
-     */
-    Characteristic.TimeoutDelay = function () {
-        Characteristic.call(
-            this,
-            'Post-Activity Timeout Delay',
-            '94a765c6-e114-11eb-ba80-0242ac130004'
-        );
-        this.setProps({
-            format: Characteristic.Formats.UINT64,
-            unit: Characteristic.Units.SECONDS,
-            maxValue: 2147483647,
-            minValue: 0,
-            minStep: 1,
-            perms: [
-                Characteristic.Perms.READ,
-                Characteristic.Perms.WRITE,
-                Characteristic.Perms.NOTIFY
-            ]
-        });
-        this.value = this.getDefaultValue();
-    }
-    inherits(Characteristic.TimeoutDelay, Characteristic);
-    Characteristic.TimeoutDelay.UUID = '94a765c6-e114-11eb-ba80-0242ac130004';
-
-    /**
-     * Characteristic "Keeping Occupancy Triggered"
-     */
-    Characteristic.KeepingOccupancyTriggered = function () {
-        Characteristic.call(
-            this,
-            'Keeping Occupancy Triggered',
-            '25eb64e4-e104-11eb-ba80-0242ac130004'
-        );
-        this.setProps({
-            format: Characteristic.Formats.BOOL,
-            perms: [
-                Characteristic.Perms.READ,
-                Characteristic.Perms.WRITE,
-                Characteristic.Perms.NOTIFY
-            ]
-        });
-        this.value = this.getDefaultValue();
-    }
-    inherits(Characteristic.KeepingOccupancyTriggered, Characteristic);
-    Characteristic.KeepingOccupancyTriggered.UUID = '25eb64e4-e104-11eb-ba80-0242ac130004';
 
     // Register
     homebridge.registerAccessory(
@@ -93,8 +28,10 @@ module.exports = function (homebridge) {
 }
 
 class MagicOccupancy {
-    constructor (log, config) {
+    constructor (log, config, api) {
         this.log = log;
+        this.config = config;
+        this.api = api;
         this.occupancyLogging = config.occupancyLogging ?? true;
         this.name = config.name.trim() ?? 'MagicOccupancy';
         this.lightSwitchesNames = (config.lightSwitchesNames ?? '').split(',');
@@ -155,31 +92,60 @@ class MagicOccupancy {
         this.occupancyService.addOptionalCharacteristic(Characteristic.ConfiguredName);
         this.occupancyService.setCharacteristic(Characteristic.ConfiguredName, this.name.trim());
 
-        this.occupancyService.addCharacteristic(Characteristic.TimeoutDelay);
+        this.occupancyService.addCharacteristic(new Characteristic(
+            TIMEOUT_DELAY_CHARACTERISTIC_NAME,
+            TIMEOUT_DELAY_CHARACTERISTIC_UUID,
+            {
+                format: this.api.hap.Formats.UINT64,
+                unit: this.api.hap.Units.SECONDS,
+                maxValue: 2147483647,
+                minValue: 0,
+                minStep: 1,
+                perms: [
+                    this.api.hap.Perms.READ,
+                    this.api.hap.Perms.WRITE,
+                    this.api.hap.Perms.NOTIFY
+                ]
+            }
+        ));
         this.occupancyService.setCharacteristic(
-            Characteristic.TimeoutDelay,
+            TIMEOUT_DELAY_CHARACTERISTIC_NAME,
             Math.min(2147483647, this.stayOccupiedDelay)
         );
         this.occupancyService
-            .getCharacteristic(Characteristic.TimeoutDelay)
+            .getCharacteristic(TIMEOUT_DELAY_CHARACTERISTIC_NAME)
             .on('change', event => {
                 this.log.debug('Setting stay occupied delay to:', event.newValue)
                 this.stayOccupiedDelay = event.newValue
             });
 
-        this.occupancyService.addCharacteristic(Characteristic.TimeRemaining)
-        if (this.stayOccupiedDelay) {
-            this.occupancyService.setCharacteristic(
-                Characteristic.TimeRemaining,
-                Math.min(2147483647, savedState.TimeRemaining)
-            );
-        }
+        this.occupancyService.addCharacteristic(new Characteristic(
+            TIME_REMAINING_CHARACTERISTIC_NAME,
+            TIME_REMAINING_CHARACTERISTIC_UUID,
+            {
+                format: this.api.hap.Formats.UINT64,
+                unit: this.api.hap.Units.SECONDS,
+                maxValue: 2147483647,
+                minValue: 0,
+                minStep: 1,
+                perms: [
+                    this.api.hap.Perms.READ,
+                    this.api.hap.Perms.WRITE,
+                    this.api.hap.Perms.NOTIFY
+                ]
+            }
+        ));
+        
+        this.occupancyService.setCharacteristic(
+            TIME_REMAINING_CHARACTERISTIC_NAME,
+            this.stayOccupiedDelay ? Math.min(2147483647, savedState.TimeRemaining) : 0
+        );
 
         //Restore past state
         this._setOccupancyState(savedState.ModeState);
 
         this.occupancyService
-            .getCharacteristic(Characteristic.TimeRemaining)
+            .getCharacteristic(TIME_REMAINING_CHARACTERISTIC_NAME)
             .on('change', event => {
                 if (event.newValue === 0 && event.oldValue > 0) {
                     this.log.debug('Cancel timer and set occupancy to "NotDetected"')
@@ -394,7 +360,7 @@ class MagicOccupancy {
 
             if (newValue !== this._interval_last_value) {
                 this.occupancyService.setCharacteristic(
-                    Characteristic.TimeRemaining,
+                    TIME_REMAINING_CHARACTERISTIC_NAME,
                     Math.min(2147483647, newValue)
                 );
                 this._interval_last_value = newValue;
@@ -463,7 +429,7 @@ class MagicOccupancy {
 
         if (this.stayOccupiedDelay) {
             this.occupancyService.setCharacteristic(
-                Characteristic.TimeRemaining,
+                TIME_REMAINING_CHARACTERISTIC_NAME,
                 this.stayOccupiedDelay
             );
         }
@@ -512,7 +478,7 @@ class MagicOccupancy {
         this._setOccupancyState('Unoccupied');
 
         if (this.stayOccupiedDelay) {
-            this.occupancyService.setCharacteristic(Characteristic.TimeRemaining, 0);
+            this.occupancyService.setCharacteristic(TIME_REMAINING_CHARACTERISTIC_NAME, 0);
         }
 
         if (this.maxOccupationTimeout > 0 && this._max_occupation_timer == null) {
@@ -531,16 +497,15 @@ class MagicOccupancy {
 
         //Turn all switches off
         var shutoff_switch = aSwitch => {
-            aSwitch
+            let theValue = aSwitch
                 .getCharacteristic(Characteristic.On)
-                .getValue(function (err, value) {
-                    //Error or still on, turn it off
-                    if (err || value) {
-                        _this.isClearingOccupancy = true;
-                        aSwitch.setCharacteristic(Characteristic.On, false);
-                        _this.isClearingOccupancy = false;
-                    }
-                });
+                .value;
+            //still on, turn it off
+            if (theValue) {
+                _this.isClearingOccupancy = true;
+                aSwitch.setCharacteristic(Characteristic.On, false);
+                _this.isClearingOccupancy = false;
+            }
         }
         for (let i = 0; i < this.switchServices.length; i += 1) {
             shutoff_switch(this.switchServices[i]);
@@ -632,20 +597,9 @@ class MagicOccupancy {
                 break;
             }
 
-            switchesToCheck[i]
-                .getCharacteristic(Characteristic.KeepingOccupancyTriggered)
-                .getValue(
-                    function (err, value) {
-                        if (err) {
-                            this.log.debug(
-                                `ERROR GETTING VALUE Characteristic.KeepingOccupancyTriggered ${err}`
-                            )
-                            value = false
-                        }
-
-                        handleResponse(value)
-                    }.bind(this)
-                );
+            handleResponse(switchesToCheck[i]
+                .getCharacteristic(KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME)
+                .value);
         }
 
         if (
@@ -679,6 +633,8 @@ class MagicOccupancy {
 class BaseHelperSwitch {
     constructor (occupancySensor, config, isStateful) {
         this.log = occupancySensor.log;
+        this.config = occupancySensor.config;
+        this.api = occupancySensor.api;
         this.occupancySensor = occupancySensor;
         this.name = occupancySensor.name.trim() + ' ' + config.name.trim();
         this._service = new Service.Switch(this.name.trim(), this.name.trim());
@@ -689,9 +645,20 @@ class BaseHelperSwitch {
         this._is_on = this.isStateful ? this.occupancySensor.getCachedState('PMS-' + this.name, false) : false;
         this._service.setCharacteristic(Characteristic.On, this._is_on);
 
-        this._service.addCharacteristic(Characteristic.KeepingOccupancyTriggered);
+        this._service.addCharacteristic(new Characteristic(
+            KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME,
+            KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_UUID,
+            {
+                format: this.api.hap.Formats.BOOL,
+                perms: [
+                    this.api.hap.Perms.READ,
+                    this.api.hap.Perms.WRITE,
+                    this.api.hap.Perms.NOTIFY
+                ]
+            }
+        ));
         this._service
-            .getCharacteristic(Characteristic.KeepingOccupancyTriggered)
+            .getCharacteristic(KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME)
             .onGet(async () => {
                 return this._getIsKeepingOccupancyTriggered()
             });
