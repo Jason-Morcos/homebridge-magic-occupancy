@@ -9,9 +9,6 @@ const TIME_REMAINING_CHARACTERISTIC_UUID = '2000006D-0000-1000-8000-0026BB765291
 const TIMEOUT_DELAY_CHARACTERISTIC_NAME = 'Post-Activity Timeout Delay';
 const TIMEOUT_DELAY_CHARACTERISTIC_UUID = '94a765c6-e114-11eb-ba80-0242ac130004';
 
-const KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME = 'Keeping Occupancy Triggered';
-const KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_UUID = '25eb64e4-e104-11eb-ba80-0242ac130004';
-
 // OccupancyTriggerSwitch is 100% based on https://github.com/nfarina/homebridge-dummy
 
 module.exports = function (homebridge) {
@@ -78,7 +75,7 @@ class MagicOccupancy {
         this._interval = null;
         this._interval_last_value = 0;
 
-        this.switchServices = [];
+        this.switches = [];
         this.occupancyService = new Service.OccupancySensor(this.name);
         this.informationService = new Service.AccessoryInformation()
             .setCharacteristic(
@@ -158,18 +155,18 @@ class MagicOccupancy {
             this.log.debug(
                 'Making ' +
                     this.lightSwitchesNames.length +
-                    ' Light Switch switchServices'
+                    ' Light Switches'
             );
             this.lightSwitchesNames.forEach(
                 function (switchName) {
                     if (switchName.length == 0) {
                         return true //continue
                     }
-                    this.switchServices.push(
+                    this.switches.push(
                         new LightSwitchMirrorSwitch(this, {
                             name: switchName,
                             stayOnOnly: false
-                        })._service
+                        })
                     )
                 }.bind(this)
             );
@@ -179,18 +176,18 @@ class MagicOccupancy {
             this.log.debug(
                 'Making ' +
                     this.statefulSwitchesNames.length +
-                    ' Stateful trigger switchServices'
+                    ' Stateful trigger switches'
             );
             this.statefulSwitchesNames.forEach(
                 function (switchName) {
                     if (switchName.length == 0) {
                         return true //continue
                     }
-                    this.switchServices.push(
+                    this.switches.push(
                         new StatefulSwitch(this, {
                             name: switchName,
                             stayOnOnly: false
-                        })._service
+                        })
                     )
                 }.bind(this)
             );
@@ -200,18 +197,18 @@ class MagicOccupancy {
             this.log.debug(
                 'Making ' +
                     this.triggerSwitchesNames.length +
-                    ' Trigger trigger switchServices'
+                    ' Trigger trigger switches'
             );
             this.triggerSwitchesNames.forEach(
                 function (switchName) {
                     if (switchName.length == 0) {
                         return true //continue
                     }
-                    this.switchServices.push(
+                    this.switches.push(
                         new TriggerSwitch(this, {
                             name: switchName,
                             stayOnOnly: false
-                        })._service
+                        })
                     )
                 }.bind(this)
             );
@@ -222,18 +219,18 @@ class MagicOccupancy {
             this.log.debug(
                 'Making ' +
                     this.statefulStayOnSwitchesNames.length +
-                    ' StayOn Stateful trigger switchServices'
+                    ' StayOn Stateful trigger switches'
             );
             this.statefulStayOnSwitchesNames.forEach(
                 function (switchName) {
                     if (switchName.length == 0) {
                         return true //continue
                     }
-                    this.switchServices.push(
+                    this.switches.push(
                         new StatefulSwitch(this, {
                             name: switchName,
                             stayOnOnly: true
-                        })._service
+                        })
                     )
                 }.bind(this)
             );
@@ -243,18 +240,18 @@ class MagicOccupancy {
             this.log.debug(
                 'Making ' +
                     this.triggerStayOnSwitchesNames.length +
-                    ' StayOn Trigger trigger switchServices'
+                    ' StayOn Trigger trigger switches'
             );
             this.triggerStayOnSwitchesNames.forEach(
                 function (switchName) {
                     if (switchName.length == 0) {
                         return true //continue
                     }
-                    this.switchServices.push(
+                    this.switches.push(
                         new TriggerSwitch(this, {
                             name: switchName,
                             stayOnOnly: true
-                        })._service
+                        })
                     )
                 }.bind(this)
             );
@@ -262,10 +259,10 @@ class MagicOccupancy {
 
         //Create master shutoff
         if (config.createMasterShutoff == true) {
-            this.switchServices.push(
+            this.switches.push(
                 new MasterShutoffSwitch(this, {
                     name: 'Master Shutoff'
-                })._service
+                })
             );
         }
 
@@ -397,7 +394,7 @@ class MagicOccupancy {
 
     //Helper to get a cached state value
     getCachedState (key, defaultValue) {
-        if (!this.persistBetweenReboots) {
+        if (!this.persistBetweenReboots && !this.initializationCompleted) {
             this.log.debug(`Persistence disabled - ignoring cached value for ${key}`);
             return defaultValue;
         }
@@ -507,8 +504,8 @@ class MagicOccupancy {
                 _this.isClearingOccupancy = false;
             }
         }
-        for (let i = 0; i < this.switchServices.length; i += 1) {
-            shutoff_switch(this.switchServices[i]);
+        for (let i = 0; i < this.switches.length; i += 1) {
+            shutoff_switch(this.switches[i]._service);
         }
 
         //Save state
@@ -521,9 +518,9 @@ class MagicOccupancy {
     }
 
     /**
-     * Checks all the trigger switchServices to see if any of them are on. If so this
+     * Checks all the trigger switches to see if any of them are on. If so this
      * Occupancy Sensor will remain "Occupied". This is used as a callback when
-     * the "On" state changes on any of the trigger switchServices.
+     * the "On" state changes on any of the trigger switches.
      */
     checkOccupancy (timeoutUntilCheck = 0) {
         if (this.locksCounter > 0) {
@@ -549,7 +546,7 @@ class MagicOccupancy {
 
         this.locksCounter += 1
 
-        const switchesToCheck = this.switchServices;
+        const switchesToCheck = this.switches;
         //Interpolate string to copy
         const previousModeState = `${this.modeState}`;
         this.log.debug(`checking occupancy. Total: ${switchesToCheck.length} switches`);
@@ -591,15 +588,12 @@ class MagicOccupancy {
             }
         }.bind(this);
 
-        /* look at all the trigger switchServices "KeepingOccupancyTriggered" characteristic */
+        /* look at all the trigger switches "KeepingOccupancyTriggered" characteristic */
         for (let i = 0; i < switchesToCheck.length; i += 1) {
             if (result.already_acted) {
                 break;
             }
-
-            handleResponse(switchesToCheck[i]
-                .getCharacteristic(KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME)
-                .value);
+            handleResponse(switchesToCheck[i]._getIsKeepingOccupancyTriggered());
         }
 
         if (
@@ -626,7 +620,7 @@ class MagicOccupancy {
     getServices () {
         var services = [this.occupancyService, this.informationService];
 
-        return services.concat([...this.switchServices]);
+        return services.concat(this.switches.map(switchItem => switchItem._service));
     }
 }
 
@@ -644,24 +638,6 @@ class BaseHelperSwitch {
 
         this._is_on = this.isStateful ? this.occupancySensor.getCachedState('PMS-' + this.name, false) : false;
         this._service.setCharacteristic(Characteristic.On, this._is_on);
-
-        this._service.addCharacteristic(new Characteristic(
-            KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME,
-            KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_UUID,
-            {
-                format: this.api.hap.Formats.BOOL,
-                perms: [
-                    this.api.hap.Perms.READ,
-                    this.api.hap.Perms.WRITE,
-                    this.api.hap.Perms.NOTIFY
-                ]
-            }
-        ));
-        this._service
-            .getCharacteristic(KEEPING_OCCUPANCY_TRIGGERED_CHARACTERISTIC_NAME)
-            .onGet(async () => {
-                return this._getIsKeepingOccupancyTriggered()
-            });
 
         //Fix names getting messed up by iOS 16
         this._service.addOptionalCharacteristic(Characteristic.ConfiguredName);
