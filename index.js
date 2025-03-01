@@ -1,7 +1,7 @@
 'use strict';
 
-var inherits = require('util').inherits;
-var Service, Characteristic, HomebridgeAPI;
+const { inherits } = require('util');
+let Service, Characteristic, HomebridgeAPI;
 
 const TIME_REMAINING_CHARACTERISTIC_NAME = 'Time Remaining';
 const TIME_REMAINING_CHARACTERISTIC_UUID = '2000006D-0000-1000-8000-0026BB765291';
@@ -24,33 +24,25 @@ module.exports = function (homebridge) {
         'MagicOccupancy',
         MagicOccupancy
     );
-}
+};
 
 class MagicOccupancy {
-    constructor (log, config, api) {
+    constructor(log, config, api) {
         this.log = log;
         this.config = config;
         this.api = api;
         this.occupancyLogging = config.occupancyLogging ?? true;
-        this.name = config.name.trim() ?? 'MagicOccupancy';
+        // Trim name if provided, otherwise default to 'MagicOccupancy'
+        this.name = config.name ? config.name.trim() : 'MagicOccupancy';
         this.lightSwitchesNames = (config.lightSwitchesNames ?? '').split(',');
         this.statefulSwitchesNames = (config.statefulSwitchesNames ?? '').split(',');
         this.triggerSwitchesNames = (config.triggerSwitchesNames ?? '').split(',');
-        this.statefulStayOnSwitchesNames = (
-            config.statefulStayOnSwitchesNames ?? ''
-        ).split(',');
-        this.triggerStayOnSwitchesNames = (
-            config.triggerStayOnSwitchesNames ?? ''
-        ).split(',');
-        this.stayOccupiedDelay = Math.max(
-            0,
-            parseInt(config.stayOccupiedDelay ?? 0, 10) ?? 0
-        );
-        this.maxOccupationTimeout = Math.max(
-            0,
-            parseInt(config.maxOccupationTimeout ?? 0, 10) ?? 0
-        );
-        this.serial = (config.serial ?? 'JmoMagicOccupancySwitch').trim();
+        this.statefulStayOnSwitchesNames = (config.statefulStayOnSwitchesNames ?? '').split(',');
+        this.triggerStayOnSwitchesNames = (config.triggerStayOnSwitchesNames ?? '').split(',');
+        // Use parseInt with fallback to zero for non-numeric values
+        this.stayOccupiedDelay = Math.max(0, parseInt(config.stayOccupiedDelay, 10) || 0);
+        this.maxOccupationTimeout = Math.max(0, parseInt(config.maxOccupationTimeout, 10) || 0);
+        this.serial = config.serial ? config.serial.trim() : 'JmoMagicOccupancySwitch';
         this.persistBetweenReboots = config.persistBetweenReboots != false;
         this.startOnReboot = config.startOnReboot || false;
         this.triggerSwitchToggleTimeout = 1000;
@@ -62,6 +54,7 @@ class MagicOccupancy {
         this._max_occupation_timer = null;
         this.modeState = 'Unoccupied';
 
+        // Initialize storage
         this.cacheDirectory = HomebridgeAPI.user.persistPath();
         this.storage = require('node-persist');
         this.storage.initSync({
@@ -78,7 +71,9 @@ class MagicOccupancy {
         this._interval_last_value = 0;
 
         this.switches = [];
+        // Create Occupancy Sensor Service
         this.occupancyService = new Service.OccupancySensor(this.name);
+        // Create Information Service
         this.informationService = new Service.AccessoryInformation()
             .setCharacteristic(
                 Characteristic.Manufacturer,
@@ -87,10 +82,11 @@ class MagicOccupancy {
             .setCharacteristic(Characteristic.Model, '2')
             .setCharacteristic(Characteristic.SerialNumber, this.serial);
 
-        //Fix names getting messed up by iOS 16
+        // Fix names getting messed up by iOS 16
         this.occupancyService.addOptionalCharacteristic(Characteristic.ConfiguredName);
-        this.occupancyService.setCharacteristic(Characteristic.ConfiguredName, this.name.trim());
+        this.occupancyService.setCharacteristic(Characteristic.ConfiguredName, this.name);
 
+        // Add Post-Activity Timeout Delay characteristic
         this.occupancyService.addCharacteristic(new Characteristic(
             TIMEOUT_DELAY_CHARACTERISTIC_NAME,
             TIMEOUT_DELAY_CHARACTERISTIC_UUID,
@@ -108,15 +104,16 @@ class MagicOccupancy {
         ));
         this.occupancyService.setCharacteristic(
             TIMEOUT_DELAY_CHARACTERISTIC_NAME,
-            Math.min(MAX_TIME_REMAINING, this.stayOccupiedDelay ?? 0)
+            Math.min(MAX_TIME_REMAINING, this.stayOccupiedDelay)
         );
         this.occupancyService
             .getCharacteristic(TIMEOUT_DELAY_CHARACTERISTIC_NAME)
             .on('change', event => {
-                this.log.debug('Setting stay occupied delay to:', event.newValue)
-                this.stayOccupiedDelay = event.newValue
+                this.log.debug('Setting stay occupied delay to:', event.newValue);
+                this.stayOccupiedDelay = event.newValue;
             });
 
+        // Add Time Remaining characteristic
         this.occupancyService.addCharacteristic(new Characteristic(
             TIME_REMAINING_CHARACTERISTIC_NAME,
             TIME_REMAINING_CHARACTERISTIC_UUID,
@@ -135,129 +132,109 @@ class MagicOccupancy {
         
         this.occupancyService.setCharacteristic(
             TIME_REMAINING_CHARACTERISTIC_NAME,
-            this.stayOccupiedDelay ? Math.min(MAX_TIME_REMAINING, savedState.TimeRemaining  ?? 0) : 0
+            this.stayOccupiedDelay ? Math.min(MAX_TIME_REMAINING, savedState.TimeRemaining ?? 0) : 0
         );
 
-        //Restore past state
+        // Restore past state
         this._setOccupancyState(savedState.ModeState);
 
+        // Listen for changes on the Time Remaining characteristic
         this.occupancyService
             .getCharacteristic(TIME_REMAINING_CHARACTERISTIC_NAME)
             .on('change', event => {
                 if (event.newValue === 0 && event.oldValue > 0) {
-                    this.log.debug('Cancel timer and set occupancy to "NotDetected"')
-                    this.setOccupancyNotDetected()
+                    this.log.debug('Cancel timer and set occupancy to "NotDetected"');
+                    this.setOccupancyNotDetected();
                 }
             });
 
         /* Make the lightSwitches */
         if (this.lightSwitchesNames.length > 0) {
             this.log.debug(
-                'Making ' +
-                    this.lightSwitchesNames.length +
-                    ' Light Switches'
+                'Making ' + this.lightSwitchesNames.length + ' Light Switches'
             );
-            this.lightSwitchesNames.forEach(
-                function (switchName) {
-                    if (switchName.length == 0) {
-                        return true //continue
-                    }
-                    this.switches.push(
-                        new LightSwitchMirrorSwitch(this, {
-                            name: switchName,
-                            stayOnOnly: false
-                        })
-                    )
-                }.bind(this)
-            );
+            this.lightSwitchesNames.forEach(function (switchName) {
+                if (switchName.length == 0) {
+                    return true; // continue
+                }
+                this.switches.push(
+                    new LightSwitchMirrorSwitch(this, {
+                        name: switchName,
+                        stayOnOnly: false
+                    })
+                );
+            }.bind(this));
         }
         /* Make the statefulSwitches */
         if (this.statefulSwitchesNames.length > 0) {
             this.log.debug(
-                'Making ' +
-                    this.statefulSwitchesNames.length +
-                    ' Stateful trigger switches'
+                'Making ' + this.statefulSwitchesNames.length + ' Stateful trigger switches'
             );
-            this.statefulSwitchesNames.forEach(
-                function (switchName) {
-                    if (switchName.length == 0) {
-                        return true //continue
-                    }
-                    this.switches.push(
-                        new StatefulSwitch(this, {
-                            name: switchName,
-                            stayOnOnly: false
-                        })
-                    )
-                }.bind(this)
-            );
+            this.statefulSwitchesNames.forEach(function (switchName) {
+                if (switchName.length == 0) {
+                    return true; // continue
+                }
+                this.switches.push(
+                    new StatefulSwitch(this, {
+                        name: switchName,
+                        stayOnOnly: false
+                    })
+                );
+            }.bind(this));
         }
         /* Make the triggerSwitches */
         if (this.triggerSwitchesNames.length > 0) {
             this.log.debug(
-                'Making ' +
-                    this.triggerSwitchesNames.length +
-                    ' Trigger trigger switches'
+                'Making ' + this.triggerSwitchesNames.length + ' Trigger trigger switches'
             );
-            this.triggerSwitchesNames.forEach(
-                function (switchName) {
-                    if (switchName.length == 0) {
-                        return true //continue
-                    }
-                    this.switches.push(
-                        new TriggerSwitch(this, {
-                            name: switchName,
-                            stayOnOnly: false
-                        })
-                    )
-                }.bind(this)
-            );
+            this.triggerSwitchesNames.forEach(function (switchName) {
+                if (switchName.length == 0) {
+                    return true; // continue
+                }
+                this.switches.push(
+                    new TriggerSwitch(this, {
+                        name: switchName,
+                        stayOnOnly: false
+                    })
+                );
+            }.bind(this));
         }
-
         /* Make the statefulStayOnSwitches */
         if (this.statefulStayOnSwitchesNames.length > 0) {
             this.log.debug(
-                'Making ' +
-                    this.statefulStayOnSwitchesNames.length +
-                    ' StayOn Stateful trigger switches'
+                'Making ' + this.statefulStayOnSwitchesNames.length + ' StayOn Stateful trigger switches'
             );
-            this.statefulStayOnSwitchesNames.forEach(
-                function (switchName) {
-                    if (switchName.length == 0) {
-                        return true //continue
-                    }
-                    this.switches.push(
-                        new StatefulSwitch(this, {
-                            name: switchName,
-                            stayOnOnly: true
-                        })
-                    )
-                }.bind(this)
-            );
+            this.statefulStayOnSwitchesNames.forEach(function (switchName) {
+                if (switchName.length == 0) {
+                    return true; // continue
+                }
+                this.switches.push(
+                    new StatefulSwitch(this, {
+                        name: switchName,
+                        stayOnOnly: true
+                    })
+                );
+            }.bind(this));
         }
         /* Make the triggerStayOnSwitches */
         if (this.triggerStayOnSwitchesNames.length > 0) {
             this.log.debug(
-                'Making ' +
-                    this.triggerStayOnSwitchesNames.length +
-                    ' StayOn Trigger trigger switches'
+                'Making ' + this.triggerStayOnSwitchesNames.length + ' StayOn Trigger trigger switches'
             );
-            this.triggerStayOnSwitchesNames.forEach(
-                function (switchName) {
-                    if (switchName.length == 0) {
-                        return true //continue
-                    }
-                    this.switches.push(
-                        new TriggerSwitch(this, {
-                            name: switchName,
-                            stayOnOnly: true
-                        })
-                    )
-                }.bind(this)
-            );
+            this.triggerStayOnSwitchesNames.forEach(function (switchName) {
+                if (switchName.length == 0) {
+                    return true; // continue
+                }
+                this.switches.push(
+                    new TriggerSwitch(this, {
+                        name: switchName,
+                        stayOnOnly: true
+                    })
+                );
+            }.bind(this));
         }
 
-        //Create master shutoff
+        // Create master shutoff
         if (config.createMasterShutoff == true) {
             this.switches.push(
                 new MasterShutoffSwitch(this, {
@@ -266,42 +243,37 @@ class MagicOccupancy {
             );
         }
 
-        //Mark that we're done initializing here, final setup below
+        // Mark that we're done initializing here, final setup below
         this.initializationCompleted = true;
 
-        //Handle start on reboot
+        // Handle start on reboot
         if (this.startOnReboot) {
-            this.log.debug(`startOnReboot==true - setting to active`)
-            //Run the set after homebridge should have booted to ensure events fire
-            setTimeout(
-                function () {
-                    this.setOccupancyDetected()
-                    this.checkOccupancy(10)
-                }.bind(this),
-                10000
-            );
+            this.log.debug(`startOnReboot==true - setting to active`);
+            // Run the set after homebridge should have booted to ensure events fire
+            setTimeout(function () {
+                this.setOccupancyDetected();
+                this.checkOccupancy(10);
+            }.bind(this), 10000);
         }
-        //Handle restoring state - gotta restart the decaying timer if we rebooted
+        // Handle restoring state - gotta restart the decaying timer if we rebooted
         else if (this.persistBetweenReboots && savedState.ModeState == 'UnoccupiedDelay') {
-            this.startUnoccupiedDelay(
-                this.stayOccupiedDelay ? savedState.TimeRemaining : 0
-            );
+            this.startUnoccupiedDelay(this.stayOccupiedDelay ? savedState.TimeRemaining : 0);
         }
-        //Handle restoring state - gotta restart the max runtime timer if we rebooted
+        // Handle restoring state - gotta restart the max runtime timer if we rebooted
         else if (this.persistBetweenReboots && savedState.ModeState == 'Occupied') {
             this.setOccupancyDetected();
         }
-        //Handle restoring state - gotta make sure all the timers are stopped
-        else if (this.persistBetweenReboots && savedState.ModeState == 'Occupied') {
+        // Handle restoring state - gotta make sure all the timers are stopped
+        else if (this.persistBetweenReboots && savedState.ModeState == 'Unoccupied') {
             this.setOccupancyNotDetected();
         }
 
-        //Do an initial occupancy check
+        // Do an initial occupancy check
         this.checkOccupancy(10);
     }
 
-    //Helper to get a cached state value
-    _getInitialMainCacheState () {
+    // Helper to get a cached state value
+    _getInitialMainCacheState() {
         const defaultState = {
             TimeRemaining: 0,
             ModeState: 'Unoccupied'
@@ -310,12 +282,12 @@ class MagicOccupancy {
         try {
             var state = this.getCachedState('_MAIN', defaultState);
 
-            //Handle migrating a v1 cache
+            // Handle migrating a v1 cache
             if (!('ModeState' in state)) {
                 state.ModeState = 'UnoccupiedDelay';
             }
 
-            return state
+            return state;
         } catch (error) {
             this.log.debug(`Error initializing past state, falling back on default - ${error}`);
             return defaultState;
@@ -323,11 +295,11 @@ class MagicOccupancy {
     }
 
     /**
-     * startUnoccupiedDelays the countdown timer.
+     * startUnoccupiedDelay the countdown timer.
      */
-    startUnoccupiedDelay (overrideTimeRemaining = null) {
-        var timeRemaining = this.stayOccupiedDelay ?? 0;
-        if(overrideTimeRemaining != null && overrideTimeRemaining < timeRemaining) {
+    startUnoccupiedDelay(overrideTimeRemaining = null) {
+        var timeRemaining = this.stayOccupiedDelay;
+        if (overrideTimeRemaining != null && overrideTimeRemaining < timeRemaining) {
             timeRemaining = overrideTimeRemaining;
         }
 
@@ -336,7 +308,7 @@ class MagicOccupancy {
             return;
         }
 
-        //Set state
+        // Set state
         this._setOccupancyState('UnoccupiedDelay');
 
         this.locksCounter += 1;
@@ -346,10 +318,7 @@ class MagicOccupancy {
         this._timer_started = new Date().getTime();
         this.log.debug('Timer startUnoccupiedDelayed:', timeRemaining);
 
-        this._timer = setTimeout(
-            this.setOccupancyNotDetected.bind(this),
-            Math.round(timeRemaining * 1000)
-        );
+        this._timer = setTimeout(this.setOccupancyNotDetected.bind(this), Math.round(timeRemaining * 1000));
         this._timer_delay = timeRemaining;
         this._interval = setInterval(() => {
             var elapsed = (new Date().getTime() - this._timer_started) / 1000;
@@ -380,7 +349,7 @@ class MagicOccupancy {
     /**
      * Stops the countdown timer
      */
-    stop () {
+    stop() {
         if (this._timer) {
             this.log.debug('Delay timer stopped');
             clearTimeout(this._timer);
@@ -392,8 +361,8 @@ class MagicOccupancy {
         }
     }
 
-    //Helper to get a cached state value
-    getCachedState (key, defaultValue) {
+    // Helper to get a cached state value
+    getCachedState(key, defaultValue) {
         if (!this.persistBetweenReboots && !this.initializationCompleted) {
             this.log.debug(`Persistence disabled - ignoring cached value for ${key}`);
             return defaultValue;
@@ -408,17 +377,15 @@ class MagicOccupancy {
 
         return cachedValue;
     }
-    //Helper to set/save a cached state value
-    saveCachedState (key, value) {
-        setTimeout(
-            function () {
-                this.storage.setItemSync(this.name + '-HMO-' + key, value)
-            }.bind(this),
-            10
-        );
+
+    // Helper to set/save a cached state value
+    saveCachedState(key, value) {
+        setTimeout(function () {
+            this.storage.setItemSync(this.name + '-HMO-' + key, value);
+        }.bind(this), 10);
     }
 
-    setOccupancyDetected () {
+    setOccupancyDetected() {
         this.locksCounter += 1;
         this.stop();
 
@@ -438,26 +405,26 @@ class MagicOccupancy {
             );
         }
 
-        //Save state
+        // Save state
         this.saveCachedState('_MAIN', {
-            TimeRemaining: this.stayOccupiedDelay ?? 0,
+            TimeRemaining: this.stayOccupiedDelay,
             ModeState: 'Occupied'
         });
 
         this.locksCounter -= 1;
     }
 
-    _setOccupancyState (newVal) {
+    _setOccupancyState(newVal) {
         // Capture the previous state and determine if the state change should be logged
         this.previousModeState = this.modeState;
-        const occupancyLoggingCondition = (newVal == 'Occupied' && this.previousModeState == 'Unoccupied' || newVal == 'Unoccupied')
+        const occupancyLoggingCondition = ((newVal == 'Occupied' && this.previousModeState == 'Unoccupied') || newVal == 'Unoccupied');
         if (this.occupancyLogging && occupancyLoggingCondition) {
-            this.log(`Setting state to ${newVal}`)
+            this.log(`Setting state to ${newVal}`);
         }
 
         // Set the new state
         this.modeState = newVal;
-        this.log.debug(`Previous state was ${this.previousModeState} and is now ${this.modeState}`)
+        this.log.debug(`Previous state was ${this.previousModeState} and is now ${this.modeState}`);
 
         this.occupancyService.setCharacteristic(
             Characteristic.OccupancyDetected,
@@ -467,8 +434,7 @@ class MagicOccupancy {
         );
     }
 
-    setOccupancyNotDetected () {
-        var _this = this;
+    setOccupancyNotDetected() {
         this.locksCounter += 1;
         this.stop();
 
@@ -478,37 +444,28 @@ class MagicOccupancy {
             this.occupancyService.setCharacteristic(TIME_REMAINING_CHARACTERISTIC_NAME, 0);
         }
 
-        if (this.maxOccupationTimeout > 0 && this._max_occupation_timer == null) {
-            this._max_occupation_timer = setTimeout(
-                this.setOccupancyNotDetected.bind(this),
-                Math.round(this.maxOccupationTimeout * 1000)
-            );
-        }
-
-        //Clear max timeout
+        // Clear max occupation timer if it exists
         if (this._max_occupation_timer != null) {
             this.log.debug('Max occupation timer stopped');
             clearTimeout(this._max_occupation_timer);
             this._max_occupation_timer = null;
         }
 
-        //Turn all switches off
+        // Turn all switches off
         var shutoff_switch = aSwitch => {
-            let theValue = aSwitch
-                .getCharacteristic(Characteristic.On)
-                .value;
-            //still on, turn it off
+            let theValue = aSwitch.getCharacteristic(Characteristic.On).value;
+            // Still on, turn it off
             if (theValue) {
-                _this.isClearingOccupancy = true;
+                this.isClearingOccupancy = true;
                 aSwitch.setCharacteristic(Characteristic.On, false);
-                _this.isClearingOccupancy = false;
+                this.isClearingOccupancy = false;
             }
-        }
+        };
         for (let i = 0; i < this.switches.length; i += 1) {
             shutoff_switch(this.switches[i]._service);
         }
 
-        //Save state
+        // Save state
         this.saveCachedState('_MAIN', {
             TimeRemaining: 0,
             ModeState: 'Unoccupied'
@@ -522,32 +479,27 @@ class MagicOccupancy {
      * Occupancy Sensor will remain "Occupied". This is used as a callback when
      * the "On" state changes on any of the trigger switches.
      */
-    checkOccupancy (timeoutUntilCheck = 0) {
+    checkOccupancy(timeoutUntilCheck = 0) {
         if (this.locksCounter > 0) {
-            this.log.debug(
-                `checking occupancy waiting for ${this.locksCounter} to clear; waiting for at least 100ms`
-            );
+            this.log.debug(`checking occupancy waiting for ${this.locksCounter} to clear; waiting for at least 100ms`);
             timeoutUntilCheck = Math.max(100, timeoutUntilCheck);
         }
 
         if (timeoutUntilCheck > 0) {
             if (!this.isPendingCheckOccupancy) {
                 this.isPendingCheckOccupancy = true;
-                setTimeout(
-                    function () {
-                        this.isPendingCheckOccupancy = false
-                        this.checkOccupancy()
-                    }.bind(this),
-                    timeoutUntilCheck
-                );
+                setTimeout(function () {
+                    this.isPendingCheckOccupancy = false;
+                    this.checkOccupancy();
+                }.bind(this), timeoutUntilCheck);
             }
-            return
+            return;
         }
 
-        this.locksCounter += 1
+        this.locksCounter += 1;
 
         const switchesToCheck = this.switches;
-        //Interpolate string to copy
+        // Interpolate string to copy
         const previousModeState = `${this.modeState}`;
         this.log.debug(`checking occupancy. Total: ${switchesToCheck.length} switches`);
 
@@ -570,21 +522,17 @@ class MagicOccupancy {
                     this.setOccupancyDetected();
                 }
 
-                this.log.debug(
-                    `checkOccupancy result: true. Previous state: ${previousModeState}, current state: ${this.modeState}`
-                );
+                this.log.debug(`checkOccupancy result: true. Previous state: ${previousModeState}, current state: ${this.modeState}`);
             }
 
             if (value == false && result.remainingCount == 0) {
                 result.already_acted = true;
 
-                if(previousModeState == 'Occupied') {
+                if (previousModeState == 'Occupied') {
                     this.startUnoccupiedDelay();
                 }
 
-                this.log.debug(
-                    `checkOccupancy result: false. Previous state: ${previousModeState}, current state: ${this.modeState}`
-                );
+                this.log.debug(`checkOccupancy result: false. Previous state: ${previousModeState}, current state: ${this.modeState}`);
             }
         }.bind(this);
 
@@ -596,16 +544,10 @@ class MagicOccupancy {
             handleResponse(switchesToCheck[i]._getIsKeepingOccupancyTriggered());
         }
 
-        if (
-            switchesToCheck.length == 0 &&
-            this.modeState == 'Occupied' &&
-            result.already_acted == false
-        ) {
+        if (switchesToCheck.length == 0 && this.modeState == 'Occupied' && result.already_acted == false) {
             this.startUnoccupiedDelay();
 
-            this.log.debug(
-                `checkOccupancy result: false (0 switches). Previous occupied state: ${previousModeState}, current state: ${this.modeState}`
-            );
+            this.log.debug(`checkOccupancy result: false (0 switches). Previous occupied state: ${previousModeState}, current state: ${this.modeState}`);
         }
 
         this.locksCounter -= 1;
@@ -617,15 +559,14 @@ class MagicOccupancy {
      *
      * @returns {*[]}
      */
-    getServices () {
+    getServices() {
         var services = [this.occupancyService, this.informationService];
-
         return services.concat(this.switches.map(switchItem => switchItem._service));
     }
 }
 
 class BaseHelperSwitch {
-    constructor (occupancySensor, config, isStateful) {
+    constructor(occupancySensor, config, isStateful) {
         this.log = occupancySensor.log;
         this.config = occupancySensor.config;
         this.api = occupancySensor.api;
@@ -639,224 +580,191 @@ class BaseHelperSwitch {
         this._is_on = this.isStateful ? this.occupancySensor.getCachedState('PMS-' + this.name, false) : false;
         this._service.setCharacteristic(Characteristic.On, this._is_on);
 
-        //Fix names getting messed up by iOS 16
+        // Fix names getting messed up by iOS 16
         this._service.addOptionalCharacteristic(Characteristic.ConfiguredName);
         this._service.setCharacteristic(Characteristic.ConfiguredName, this.name.trim());
 
-        //Attach to changes
+        // Attach to changes
         this._service
             .getCharacteristic(Characteristic.On)
             .on('set', this._internalStateChangeTrigger.bind(this));
     }
 
-    _getIsKeepingOccupancyTriggered () {
-        //Overwritten in child classes
+    _getIsKeepingOccupancyTriggered() {
+        // Overwritten in child classes
         return this._is_on;
     }
 
-    _killOccupancy () {
+    _killOccupancy() {
         this.occupancySensor.locksCounter += 1;
         this.occupancySensor.setOccupancyNotDetected();
-        setTimeout(
-            function () {
-                this.occupancySensor.checkOccupancy()
-                this.occupancySensor.locksCounter -= 1
-            }.bind(this),
-            10
-        );
+        setTimeout(function () {
+            this.occupancySensor.checkOccupancy();
+            this.occupancySensor.locksCounter -= 1;
+        }.bind(this), 10);
     }
 
-    _setOccupancyOn () {
+    _setOccupancyOn() {
         this.occupancySensor.locksCounter += 1;
         this.occupancySensor.setOccupancyDetected();
-        setTimeout(
-            function () {
-                this.occupancySensor.checkOccupancy();
-                this.occupancySensor.locksCounter -= 1;
-            }.bind(this),
-            10
-        );
+        setTimeout(function () {
+            this.occupancySensor.checkOccupancy();
+            this.occupancySensor.locksCounter -= 1;
+        }.bind(this), 10);
     }
 
-    _internalStateChangeTrigger (on, callback) {
-        //execute callback
+    _internalStateChangeTrigger(on, callback) {
+        // execute callback
         try {
             callback();
         } catch (error) {
             this.log.debug(`Callback error: BaseHelperSwitch._internalStateChangeTrigger - ${error}`);
         }
 
-        //Determine if the state is different
+        // Determine if the state is different
         const previousOn = this._is_on;
 
-        //Store new state
-        if(on != previousOn) {
+        // Store new state
+        if (on != previousOn) {
             this._is_on = on;
         }
 
-        //Handle off switch canceling timer
+        // Handle off switch canceling timer
         this._handleOffDelayTimer(on);
 
-        //Make sure we're actually full initialized
+        // Make sure we're actually fully initialized
         if (!this.occupancySensor.initializationCompleted) {
-            this.log.debug(
-                'Setting ' + this.name + ' initial state and bypassing all events'
-            )
-            return
+            this.log.debug('Setting ' + this.name + ' initial state and bypassing all events');
+            return;
         }
 
-        //Figure out if events should be suppressed
+        // Figure out if events should be suppressed
         const suppressEvents = this.occupancySensor.isClearingOccupancy && on == false;
 
-        //Handle specific events
-        if(!suppressEvents) {
+        // Handle specific events
+        if (!suppressEvents) {
             this._handleNewState(on, previousOn);
         }
 
-        //Cache our previous state for restoration
-        if(on != previousOn && this.isStateful) {
+        // Cache our previous state for restoration
+        if (on != previousOn && this.isStateful) {
             this.occupancySensor.saveCachedState('PMS-' + this.name, on);
         }
     }
 
     _handleOffDelayTimer(on) {
-        //Cancel if the timer exists first, always
+        // Cancel if the timer exists first, always
         if (this._offDelayTimer) {
             clearTimeout(this._offDelayTimer);
             this._offDelayTimer = null;
         }
-
-        //Turn on the off delay timer if the switch is on
-        if(on && !this.isStateful) {
-            this._offDelayTimer = setTimeout(
-                function () {
-                    this._service.setCharacteristic(Characteristic.On, false)
-                }.bind(this),
-                this.occupancySensor.triggerSwitchToggleTimeout
-            );
+        // Turn on the off delay timer if the switch is on
+        if (on && !this.isStateful) {
+            this._offDelayTimer = setTimeout(function () {
+                this._service.setCharacteristic(Characteristic.On, false);
+            }.bind(this), this.occupancySensor.triggerSwitchToggleTimeout);
         }
     }
 
-    _handleNewState (on, previousOn) {
-        //Overwritten in child classes
+    _handleNewState(on, previousOn) {
+        // Overwritten in child classes
     }
 }
 
 class StatefulSwitch extends BaseHelperSwitch {
-    constructor (occupancySensor, config) {
+    constructor(occupancySensor, config) {
         super(occupancySensor, config, true);
         this.stayOnOnly = config.stayOnOnly || false;
     }
 
-    _handleNewState (on, previousOn) {
-        const isValidOn =
-            on &&
-            (!this.stayOnOnly || this.occupancySensor.modeState != 'Unoccupied');
-
+    _handleNewState(on, previousOn) {
+        const isValidOn = on && (!this.stayOnOnly || this.occupancySensor.modeState != 'Unoccupied');
         if (isValidOn) {
             this._setOccupancyOn();
         }
-
         if (!on && this.occupancySensor.modeState != 'Unoccupied') {
             this.occupancySensor.checkOccupancy(10);
         }
     }
 
-    _getIsKeepingOccupancyTriggered () {
-        return (
-            this._is_on &&
-            (!this.stayOnOnly || this.occupancySensor.modeState != 'Unoccupied')
-        );
+    _getIsKeepingOccupancyTriggered() {
+        return this._is_on && (!this.stayOnOnly || this.occupancySensor.modeState != 'Unoccupied');
     }
 }
 
 class TriggerSwitch extends BaseHelperSwitch {
-    constructor (occupancySensor, config) {
+    constructor(occupancySensor, config) {
         super(occupancySensor, config, false);
         this.stayOnOnly = config.stayOnOnly || false;
     }
 
-    _handleNewState (on, previousOn) {
-        if (
-            on &&
-            (!this.stayOnOnly || this.occupancySensor.modeState != 'Unoccupied')
-        ) {
+    _handleNewState(on, previousOn) {
+        if (on && (!this.stayOnOnly || this.occupancySensor.modeState != 'Unoccupied')) {
             this._setOccupancyOn();
         }
     }
 
-    _getIsKeepingOccupancyTriggered () {
+    _getIsKeepingOccupancyTriggered() {
         return false;
     }
 }
 
 class LightSwitchMirrorSwitch extends BaseHelperSwitch {
-    constructor (occupancySensor, config) {
+    constructor(occupancySensor, config) {
         super(occupancySensor, config, true);
         this.wasTheInitialTriggerSwitch = this.occupancySensor.getCachedState('PMS-wasInit-' + this.name, false);
 
-        //Make this switch match the big boi
+        // Make this switch match the big boi
         this.occupancySensor.occupancyService
             .getCharacteristic(Characteristic.OccupancyDetected)
-            .on(
-                'set',
-                function (occVal, callback) {
-                    //execute callback
-                    try {
-                        callback()
-                    } catch (error) {
-                        this.log.debug(`Callback error: LightSwitchMirrorSwitch.constructor - ${error}`)
-                    }
-
-                    const properSwitchState = this.occupancySensor.modeState != 'Unoccupied';
-
-                    if (this._is_on != properSwitchState) {
-                        this._service.setCharacteristic(
-                            Characteristic.On,
-                            properSwitchState
-                        )
-                    }
-                }.bind(this)
-            );
+            .on('set', function (occVal, callback) {
+                // execute callback
+                try {
+                    callback();
+                } catch (error) {
+                    this.log.debug(`Callback error: LightSwitchMirrorSwitch.constructor - ${error}`);
+                }
+                const properSwitchState = this.occupancySensor.modeState != 'Unoccupied';
+                if (this._is_on != properSwitchState) {
+                    this._service.setCharacteristic(Characteristic.On, properSwitchState);
+                }
+            }.bind(this));
     }
 
-    _handleNewState (on, previousOn) {
-        //Figure out if this switch is the reason we're occupied and save that
-        if(this.occupancySensor.initializationCompleted && (!on || !previousOn)) {
+    _handleNewState(on, previousOn) {
+        // Figure out if this switch is the reason we're occupied and save that
+        if (this.occupancySensor.initializationCompleted && (!on || !previousOn)) {
             this.wasTheInitialTriggerSwitch = on && this.occupancySensor.modeState == 'Unoccupied';
         }
-
-        //Normal on behavior
+        // Normal on behavior
         if (on && this.occupancySensor.modeState != 'Occupied') {
             this._setOccupancyOn();
         }
-
-        //Handle turning off the whole system with this switch
+        // Handle turning off the whole system with this switch
         if (!on) {
             this._killOccupancy();
         }
-
-        //Save cached state
+        // Save cached state
         this.occupancySensor.saveCachedState('PMS-wasInit-' + this.name, this.wasTheInitialTriggerSwitch);
     }
 
-    _getIsKeepingOccupancyTriggered () {
+    _getIsKeepingOccupancyTriggered() {
         return this._is_on && this.wasTheInitialTriggerSwitch;
     }
 }
 
 class MasterShutoffSwitch extends BaseHelperSwitch {
-    constructor (occupancySensor, config) {
-        super(occupancySensor, config, false)
+    constructor(occupancySensor, config) {
+        super(occupancySensor, config, false);
     }
 
-    _handleNewState (on, previousOn) {
+    _handleNewState(on, previousOn) {
         if (on) {
             this._killOccupancy();
         }
     }
 
-    _getIsKeepingOccupancyTriggered () {
+    _getIsKeepingOccupancyTriggered() {
         return false;
     }
 }
