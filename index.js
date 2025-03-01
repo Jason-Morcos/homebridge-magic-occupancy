@@ -9,6 +9,8 @@ const TIME_REMAINING_CHARACTERISTIC_UUID = '2000006D-0000-1000-8000-0026BB765291
 const TIMEOUT_DELAY_CHARACTERISTIC_NAME = 'Post-Activity Timeout Delay';
 const TIMEOUT_DELAY_CHARACTERISTIC_UUID = '94a765c6-e114-11eb-ba80-0242ac130004';
 
+const MAX_TIME_REMAINING = 2147483647;
+
 // OccupancyTriggerSwitch is 100% based on https://github.com/nfarina/homebridge-dummy
 
 module.exports = function (homebridge) {
@@ -93,21 +95,20 @@ class MagicOccupancy {
             TIMEOUT_DELAY_CHARACTERISTIC_NAME,
             TIMEOUT_DELAY_CHARACTERISTIC_UUID,
             {
-                format: this.api.hap.Formats.UINT64,
+                format: this.api.hap.Formats.UINT32,
                 unit: this.api.hap.Units.SECONDS,
-                maxValue: 2147483647,
+                maxValue: MAX_TIME_REMAINING,
                 minValue: 0,
                 minStep: 1,
                 perms: [
                     this.api.hap.Perms.READ,
-                    this.api.hap.Perms.WRITE,
                     this.api.hap.Perms.NOTIFY
                 ]
             }
         ));
         this.occupancyService.setCharacteristic(
             TIMEOUT_DELAY_CHARACTERISTIC_NAME,
-            Math.min(2147483647, this.stayOccupiedDelay)
+            Math.min(MAX_TIME_REMAINING, this.stayOccupiedDelay ?? 0)
         );
         this.occupancyService
             .getCharacteristic(TIMEOUT_DELAY_CHARACTERISTIC_NAME)
@@ -120,14 +121,13 @@ class MagicOccupancy {
             TIME_REMAINING_CHARACTERISTIC_NAME,
             TIME_REMAINING_CHARACTERISTIC_UUID,
             {
-                format: this.api.hap.Formats.UINT64,
+                format: this.api.hap.Formats.UINT32,
                 unit: this.api.hap.Units.SECONDS,
-                maxValue: 2147483647,
+                maxValue: MAX_TIME_REMAINING,
                 minValue: 0,
                 minStep: 1,
                 perms: [
                     this.api.hap.Perms.READ,
-                    this.api.hap.Perms.WRITE,
                     this.api.hap.Perms.NOTIFY
                 ]
             }
@@ -135,7 +135,7 @@ class MagicOccupancy {
         
         this.occupancyService.setCharacteristic(
             TIME_REMAINING_CHARACTERISTIC_NAME,
-            this.stayOccupiedDelay ? Math.min(2147483647, savedState.TimeRemaining) : 0
+            this.stayOccupiedDelay ? Math.min(MAX_TIME_REMAINING, savedState.TimeRemaining  ?? 0) : 0
         );
 
         //Restore past state
@@ -358,7 +358,7 @@ class MagicOccupancy {
             if (newValue !== this._interval_last_value) {
                 this.occupancyService.setCharacteristic(
                     TIME_REMAINING_CHARACTERISTIC_NAME,
-                    Math.min(2147483647, newValue)
+                    Math.min(MAX_TIME_REMAINING, newValue)
                 );
                 this._interval_last_value = newValue;
 
