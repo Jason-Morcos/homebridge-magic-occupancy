@@ -51,6 +51,9 @@ class MagicOccupancy {
         this.isPendingCheckOccupancy = false;
         this.isClearingOccupancy = false;
 
+        // Compat: Homebridge v1 uses Perms.READ; v2 uses Perms.PAIRED_READ
+        this.permRead = this.api.hap.Perms.PAIRED_READ ?? this.api.hap.Perms.READ;
+
         this._max_occupation_timer = null;
         this.modeState = 'Unoccupied';
 
@@ -97,7 +100,7 @@ class MagicOccupancy {
                 minValue: 0,
                 minStep: 1,
                 perms: [
-                    this.api.hap.Perms.READ,
+                    this.permRead,
                     this.api.hap.Perms.NOTIFY
                 ]
             }
@@ -124,7 +127,7 @@ class MagicOccupancy {
                 minValue: 0,
                 minStep: 1,
                 perms: [
-                    this.api.hap.Perms.READ,
+                    this.permRead,
                     this.api.hap.Perms.NOTIFY
                 ]
             }
